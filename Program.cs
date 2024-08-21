@@ -46,12 +46,24 @@ namespace ChatServerApp
                             var recipient = parts[0];
                             var chatMessage = parts[1];
 
+                            // Check if the sender is trying to send a message to themselves
                             if (clients.TryGetValue(recipient, out var recipientId))
                             {
-                                Console.WriteLine($"Routing message from {clientId} to {recipient}: {chatMessage}");
-                                serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(recipientId))
-                                            .SendMoreFrame("MESSAGE")
-                                            .SendFrame($"{clientId}:{chatMessage}");
+                                if (recipientId == clientId)
+                                {
+                                    Console.WriteLine($"Cannot route message: sender and recipient are the same ({clientId}).");
+                                    // Optionally, send an error message back to the client
+                                    serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
+                                                .SendMoreFrame("ERROR")
+                                                .SendFrame("Cannot send a message to yourself.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"Routing message from {clientId} to {recipient}: {chatMessage}");
+                                    serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(recipientId))
+                                                .SendMoreFrame("MESSAGE")
+                                                .SendFrame($"{clientId}:{chatMessage}");
+                                }
                             }
                             else
                             {
