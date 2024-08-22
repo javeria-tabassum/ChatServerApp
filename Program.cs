@@ -75,6 +75,13 @@ namespace ChatServerApp
                             Console.WriteLine("Invalid message format.");
                         }
                     }
+                    else if (messageType == "PING")
+                    {
+                        Console.WriteLine($"Received PING from {clientId}, sending PONG.");
+                        serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
+                                    .SendMoreFrame("PONG")
+                                    .SendFrame(string.Empty);
+                    }
                 }
             }
         }
