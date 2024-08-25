@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using NetMQ;
@@ -46,13 +46,11 @@ namespace ChatServerApp
                             var recipient = parts[0];
                             var chatMessage = parts[1];
 
-                            // Check if the sender is trying to send a message to themselves
                             if (clients.TryGetValue(recipient, out var recipientId))
                             {
                                 if (recipientId == clientId)
                                 {
                                     Console.WriteLine($"Cannot route message: sender and recipient are the same ({clientId}).");
-                                    // Optionally, send an error message back to the client
                                     serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
                                                 .SendMoreFrame("ERROR")
                                                 .SendFrame("Cannot send a message to yourself.");
