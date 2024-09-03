@@ -7,7 +7,6 @@ namespace ChatServerApp
     class Program
     {
         private static readonly Dictionary<string, string> clients = new Dictionary<string, string>();
-        private static readonly HashSet<string> offlineUsers = new HashSet<string>();
 
         static void Main(string[] args)
         {
@@ -54,6 +53,7 @@ namespace ChatServerApp
                     break;
 
                 case "MESSAGE":
+                    Console.WriteLine($"Get message : {message}.");
                     HandleMessage(serverSocket, clientId, message);
                     break;
 
@@ -62,7 +62,7 @@ namespace ChatServerApp
                     SendPong(serverSocket, clientId);
                     break;
 
-                case "RECONNECTED":
+                case "RECONNECT":
                     clients[message] = clientId;
                     Console.WriteLine($"{message} reconnected.");
                     BroadcastOnlineUsers(serverSocket, clients);
@@ -123,8 +123,6 @@ namespace ChatServerApp
 
         private static void SendPong(RouterSocket serverSocket, string clientId)
         {
-                Console.WriteLine($"Received PING from {clientId}, sending PONG and OFFLINE_USERS.");
-
                 serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
                             .SendMoreFrame("PONG")
                             .SendFrame(string.Empty);
@@ -132,7 +130,7 @@ namespace ChatServerApp
 
         private static void BroadcastOnlineUsers(RouterSocket serverSocket, Dictionary<string, string> clients)
         {
-            var onlineUsers = string.Join(",", clients.Keys);
+                var onlineUsers = string.Join(",", clients.Keys);
                 Console.WriteLine($"Broadcasting online users: {onlineUsers}");
 
                 foreach (var clientId in clients.Values)
@@ -141,16 +139,6 @@ namespace ChatServerApp
                                 .SendMoreFrame("ONLINE_USERS")
                                 .SendFrame(onlineUsers);
                 }
-        }
-
-        private static string GetUsernameById(string clientId)
-        {
-            foreach (var entry in clients)
-                {
-                    if (entry.Value == clientId)
-                        return entry.Key;
-                }
-            return null;
         }
     }
 }
