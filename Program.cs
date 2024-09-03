@@ -8,7 +8,7 @@ namespace ChatServerApp
     {
         private static readonly Dictionary<string, string> clients = new Dictionary<string, string>();
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             using (var serverSocket = new RouterSocket("@tcp://localhost:5555"))
             {
@@ -19,7 +19,7 @@ namespace ChatServerApp
                     try
                     {
                         var clientMessage = serverSocket.ReceiveMultipartMessage();
-                        HandleClientMessage(serverSocket, clientMessage);
+                        await HandleClientMessage(serverSocket, clientMessage);
                     }
                     catch (NetMQException ex)
                     {
@@ -29,7 +29,7 @@ namespace ChatServerApp
             }
         }
 
-        private static void HandleClientMessage(RouterSocket serverSocket, NetMQMessage clientMessage)
+        private static async Task HandleClientMessage(RouterSocket serverSocket, NetMQMessage clientMessage)
         {
             var clientIdFrame = clientMessage[0];
             var clientId = clientIdFrame.ConvertToString();
@@ -43,29 +43,29 @@ namespace ChatServerApp
                 case "CONNECT":
                     clients[message] = clientId;
                     Console.WriteLine($"{message} connected.");
-                    BroadcastOnlineUsers(serverSocket, clients);
-                    break;
-
-                case "DISCONNECT":
-                    clients.Remove(message);
-                    Console.WriteLine($"{message} disconnected.");
-                    BroadcastOnlineUsers(serverSocket, clients);
-                    break;
-
-                case "MESSAGE":
-                    Console.WriteLine($"Get message : {message}.");
-                    HandleMessage(serverSocket, clientId, message);
-                    break;
-
-                case "PING":
-                    Console.WriteLine($"Received PING from {clientId}, sending PONG.");
-                    SendPong(serverSocket, clientId);
+                    await BroadcastOnlineUsers(serverSocket, clients);
                     break;
 
                 case "RECONNECT":
                     clients[message] = clientId;
                     Console.WriteLine($"{message} reconnected.");
-                    BroadcastOnlineUsers(serverSocket, clients);
+                    await BroadcastOnlineUsers(serverSocket, clients);
+                    break;
+
+                case "DISCONNECT":
+                    clients.Remove(message);
+                    Console.WriteLine($"{message} disconnected.");
+                    await BroadcastOnlineUsers(serverSocket, clients);
+                    break;
+
+                case "MESSAGE":
+                    Console.WriteLine($"Get message : {message}.");
+                    await HandleMessage(serverSocket, clientId, message);
+                    break;
+
+                case "PING":
+                    Console.WriteLine($"Received PING from {clientId}, sending PONG.");
+                    await SendPong(serverSocket, clientId);
                     break;
 
                 default:
@@ -74,7 +74,7 @@ namespace ChatServerApp
             }
         }
 
-        private static void HandleMessage(RouterSocket serverSocket, string clientId, string message)
+        private static async Task HandleMessage(RouterSocket serverSocket, string clientId, string message)
         {
             var parts = message.Split(new[] { ':' }, 2);
             if (parts.Length == 2)
@@ -87,12 +87,12 @@ namespace ChatServerApp
                     if (recipientId == clientId)
                     {
                         Console.WriteLine($"Cannot route message: sender and recipient are the same ({clientId}).");
-                        SendErrorResponse(serverSocket, clientId, "Cannot send a message to yourself.");
+                        await SendErrorResponse(serverSocket, clientId, "Cannot send a message to yourself.");
                     }
                     else
                     {
                         Console.WriteLine($"Routing message from {clientId} to {recipient}: {chatMessage}");
-                        SendMessage(serverSocket, recipientId, clientId, chatMessage);
+                        await SendMessage(serverSocket, recipientId, clientId, chatMessage);
                     }
                 }
                 else
@@ -106,30 +106,31 @@ namespace ChatServerApp
             }
         }
 
-        private static void SendMessage(RouterSocket serverSocket, string recipientId, string clientId, string chatMessage)
-        {        
+        private static async Task SendMessage(RouterSocket serverSocket, string recipientId, string clientId, string chatMessage)
+        {
                 serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(recipientId))
                             .SendMoreFrame("MESSAGE")
                             .SendFrame($"{clientId}:{chatMessage}");
-
         }
 
-        private static void SendErrorResponse(RouterSocket serverSocket, string clientId, string errorMessage)
+        private static async Task SendErrorResponse(RouterSocket serverSocket, string clientId, string errorMessage)
         {
                 serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
                             .SendMoreFrame("ERROR")
                             .SendFrame(errorMessage);
         }
 
-        private static void SendPong(RouterSocket serverSocket, string clientId)
+        private static async Task SendPong(RouterSocket serverSocket, string clientId)
         {
                 serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
                             .SendMoreFrame("PONG")
                             .SendFrame(string.Empty);
         }
 
-        private static void BroadcastOnlineUsers(RouterSocket serverSocket, Dictionary<string, string> clients)
+        private static async Task BroadcastOnlineUsers(RouterSocket serverSocket, Dictionary<string, string> clients)
         {
+            await Task.Run(() =>
+            {
                 var onlineUsers = string.Join(",", clients.Keys);
                 Console.WriteLine($"Broadcasting online users: {onlineUsers}");
 
@@ -139,6 +140,7 @@ namespace ChatServerApp
                                 .SendMoreFrame("ONLINE_USERS")
                                 .SendFrame(onlineUsers);
                 }
+            });
         }
     }
 }
