@@ -1,19 +1,19 @@
 using System.Text;
 using NetMQ;
 using NetMQ.Sockets;
+using System.Collections.Concurrent;
 
 namespace ChatServerApp
 {
     class Program
     {
-        private static readonly Dictionary<string, string> clients = new Dictionary<string, string>();
+        private static readonly ConcurrentDictionary<string, string> clients = new ConcurrentDictionary<string, string>();
 
         static async Task Main(string[] args)
         {
             using (var serverSocket = new RouterSocket("@tcp://localhost:5555"))
             {
                 Console.WriteLine("Server started, waiting for clients...");
-
                 while (true)
                 {
                     try
@@ -24,6 +24,10 @@ namespace ChatServerApp
                     catch (NetMQException ex)
                     {
                         Console.WriteLine($"An error occurred in socket operation: {ex.Message}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Unexpected error: {ex.Message}");
                     }
                 }
             }
@@ -41,25 +45,19 @@ namespace ChatServerApp
             switch (messageType)
             {
                 case "CONNECT":
-                    clients[message] = clientId;
-                    Console.WriteLine($"{message} connected.");
-                    await BroadcastOnlineUsers(serverSocket, clients);
-                    break;
-
                 case "RECONNECT":
                     clients[message] = clientId;
-                    Console.WriteLine($"{message} reconnected.");
-                    await BroadcastOnlineUsers(serverSocket, clients);
+                    Console.WriteLine($"{message} {(messageType == "CONNECT" ? "connected" : "reconnected")}.");
+                    await BroadcastOnlineUsers(serverSocket);
                     break;
 
                 case "DISCONNECT":
-                    clients.Remove(message);
+                    clients.TryRemove(message, out _);
                     Console.WriteLine($"{message} disconnected.");
-                    await BroadcastOnlineUsers(serverSocket, clients);
+                    await BroadcastOnlineUsers(serverSocket);
                     break;
 
                 case "MESSAGE":
-                    Console.WriteLine($"Get message : {message}.");
                     await HandleMessage(serverSocket, clientId, message);
                     break;
 
@@ -77,70 +75,70 @@ namespace ChatServerApp
         private static async Task HandleMessage(RouterSocket serverSocket, string clientId, string message)
         {
             var parts = message.Split(new[] { ':' }, 2);
-            if (parts.Length == 2)
-            {
-                var recipient = parts[0];
-                var chatMessage = parts[1];
-
-                if (clients.TryGetValue(recipient, out var recipientId))
-                {
-                    if (recipientId == clientId)
-                    {
-                        Console.WriteLine($"Cannot route message: sender and recipient are the same ({clientId}).");
-                        await SendErrorResponse(serverSocket, clientId, "Cannot send a message to yourself.");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Routing message from {clientId} to {recipient}: {chatMessage}");
-                        await SendMessage(serverSocket, recipientId, clientId, chatMessage);
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"Recipient {recipient} not found.");
-                }
-            }
-            else
+            if (parts.Length != 2)
             {
                 Console.WriteLine("Invalid message format.");
+                await SendErrorResponse(serverSocket, clientId, "Invalid message format.");
+                return;
             }
+
+            var recipient = parts[0];
+            var chatMessage = parts[1];
+
+            if (!clients.TryGetValue(recipient, out var recipientId))
+            {
+                Console.WriteLine($"Recipient {recipient} not found.");
+                await SendErrorResponse(serverSocket, clientId, $"Recipient {recipient} not found.");
+                return;
+            }
+
+            if (recipientId == clientId)
+            {
+                Console.WriteLine($"Cannot route message: sender and recipient are the same ({clientId}).");
+                await SendErrorResponse(serverSocket, clientId, "Cannot send a message to yourself.");
+                return;
+            }
+
+            Console.WriteLine($"Routing message from {clientId} to {recipient}: {chatMessage}");
+            await SendMessage(serverSocket, recipientId, clientId, chatMessage);
         }
 
         private static async Task SendMessage(RouterSocket serverSocket, string recipientId, string clientId, string chatMessage)
         {
-                serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(recipientId))
-                            .SendMoreFrame("MESSAGE")
-                            .SendFrame($"{clientId}:{chatMessage}");
+            serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(recipientId))
+                        .SendMoreFrame("MESSAGE")
+                        .SendFrame($"{clientId}:{chatMessage}");
+            await Task.CompletedTask;
         }
 
         private static async Task SendErrorResponse(RouterSocket serverSocket, string clientId, string errorMessage)
         {
-                serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
-                            .SendMoreFrame("ERROR")
-                            .SendFrame(errorMessage);
+            serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
+                        .SendMoreFrame("ERROR")
+                        .SendFrame(errorMessage);
+            await Task.CompletedTask;
         }
 
         private static async Task SendPong(RouterSocket serverSocket, string clientId)
         {
-                serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
-                            .SendMoreFrame("PONG")
-                            .SendFrame(string.Empty);
+            serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
+                        .SendMoreFrame("PONG")
+                        .SendFrame(string.Empty);
+            await Task.CompletedTask;
         }
 
-        private static async Task BroadcastOnlineUsers(RouterSocket serverSocket, Dictionary<string, string> clients)
+        private static async Task BroadcastOnlineUsers(RouterSocket serverSocket)
         {
-            await Task.Run(() =>
-            {
-                var onlineUsers = string.Join(",", clients.Keys);
-                Console.WriteLine($"Broadcasting online users: {onlineUsers}");
+            var onlineUsers = string.Join(",", clients.Keys);
+            Console.WriteLine($"Broadcasting online users: {onlineUsers}");
 
-                foreach (var clientId in clients.Values)
-                {
-                    serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
-                                .SendMoreFrame("ONLINE_USERS")
-                                .SendFrame(onlineUsers);
-                }
-            });
+            foreach (var clientId in clients.Values)
+            {
+                serverSocket.SendMoreFrame(Encoding.UTF8.GetBytes(clientId))
+                            .SendMoreFrame("ONLINE_USERS")
+                            .SendFrame(onlineUsers);
+            }
+            await Task.CompletedTask;
         }
     }
 }
