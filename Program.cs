@@ -35,8 +35,7 @@ namespace ChatServerApp
 
         private static async Task HandleClientMessage(RouterSocket serverSocket, NetMQMessage clientMessage)
         {
-            var clientIdFrame = clientMessage[0];
-            var clientId = clientIdFrame.ConvertToString();
+            var clientId = clientMessage[0].ConvertToString();
             var messageType = clientMessage[1].ConvertToString();
             var message = clientMessage[2].ConvertToString();
 
